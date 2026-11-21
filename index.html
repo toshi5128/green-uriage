@@ -190,7 +190,7 @@ header.top{padding-top:calc(14px + env(safe-area-inset-top,0px))}
 <script>
 (function(){
 const KEY='green-uriage';
-const APP_VERSION='1.1.1';
+const APP_VERSION='1.2';
 const STAFF=[{id:'o',name:'オーナー'},{id:'y',name:'山内さん'}];
 const PAY=[{id:'cash',label:'現金'},{id:'card',label:'カード'},{id:'qr',label:'QR・電子'}];
 const CLOSED_DAYS=[3];
@@ -266,7 +266,7 @@ function autoPrice(St,menuIds,opts,discId){
   if(d&&s>0)s=Math.max(0,d.type==='pct'?Math.round(s*(100-d.value)/1000)*10:s-d.value);
   return s;
 }
-function load(){try{const t=localStorage.getItem(KEY);return t?JSON.parse(t):null}catch(e){return null}}
+function load(){let t=null;try{t=localStorage.getItem(KEY);return t?JSON.parse(t):null}catch(e){try{if(t)localStorage.setItem(KEY+'-'+Date.now(),t)}catch(_){}return null}}
 function save(){try{localStorage.setItem(KEY,JSON.stringify(S));return true}catch(e){return false}}
 let S=load()||{menus:defaultMenus(),discounts:defaultDiscounts(),entries:[]};S.discounts=S.discounts||[];S.entries.forEach(e=>{if(e.sample&&!e.kind)e.kind=parseInt(e.id,36)%7===0?'new':'repeat'});save();
 
@@ -374,7 +374,7 @@ function rMonth(){
     <h2>メニューの種類別</h2>
     <div class="card bars">${Object.entries(cs).sort((a,b)=>b[1]-a[1]).map(([c,v])=>`<div class="bar"><span>${esc(c)}</span><span class="track"><i style="width:${v/cmax*100}%"></i></span><span class="amt num">${yen(v)}</span></div>`).join('')||'<p class="muted">—</p>'}
       ${goods?'':''}</div>
-    <div class="btnrow" style="margin-top:14px"><button class="btn sub" data-act="exportMonth">${mm}月の帳簿を表で書き出す（Excel用）</button></div>`;
+    <div class="btnrow" style="margin-top:14px"><button class="btn sub" data-act="exportMonth">${mm}月の帳簿をExcelで書き出す</button></div>`;
 }
 
 function rYear(){
@@ -412,7 +412,7 @@ function rYear(){
       <tr class="total"><td>合計</td><td>${N}</td><td>${ms.reduce((s,m)=>s+m.a.filter(isNew).length,0)}</td><td>${ms.reduce((s,m)=>s+m.a.filter(isRep).length,0)}</td><td>${yen(N?T/N:0)}</td></tr></tbody></table></div>
     <h2>メニューの種類別（${year}年）</h2>
     <div class="card bars">${Object.entries(cs).sort((a,b)=>b[1]-a[1]).map(([c,v])=>`<div class="bar"><span>${esc(c)}</span><span class="track"><i style="width:${v/cmax*100}%"></i></span><span class="amt num">${man(v)}円</span></div>`).join('')||'<p class="muted">—</p>'}</div>
-    <div class="btnrow" style="margin-top:14px"><button class="btn sub" data-act="exportYear">${year}年の売上表を書き出す（Excel用）</button></div>`;
+    <div class="btnrow" style="margin-top:14px"><button class="btn sub" data-act="exportYear">${year}年の売上表をExcelで書き出す</button></div>`;
 }
 
 function rSettings(){
@@ -422,6 +422,11 @@ function rSettings(){
       <div class="small muted">記録はこのスマホの中だけに入っています。スマホの故障や機種変更に備えて、2週間に1回くらい「控え」を保存して、LINEの自分あてやファイルに置いておいてください。${S.lastBackup?'<br>最後の控え：'+jpDate(S.lastBackup):''}</div>
       <div class="btnrow"><button class="btn" data-act="backup">控えを保存する</button><label class="btn ghost" style="text-align:center;cursor:pointer">控えから戻す<input type="file" id="restore" accept=".json,application/json" hidden></label></div>
       <div id="restoreArea"></div>
+    </div>
+    <h2>Excelで書き出す</h2>
+    <div class="card" style="display:flex;flex-direction:column;gap:10px">
+      <div class="small muted">これまでの記録を全部、Excelのファイルにします。パソコンで見たり、印刷したり、税理士さんに渡すときに使えます。（月ごと・年ごとの表は「月の帳簿」「年間」の画面の下からも出せます）</div>
+      <button class="btn sub" data-act="exportAll">全部の記録をExcelで書き出す</button>
     </div>
     <h2>料金表</h2>
     <p class="small muted" style="margin-top:0">ここの金額が、記録するときに自動で入ります。直すとすぐ反映されます（記録済みの金額は変わりません）。</p>
@@ -508,10 +513,50 @@ function saveForm(){
   closeSheet();cur=data.date;tab='today';render();toast((F.id?'直しました ':'記録しました ')+yen(price+goods));
 }
 
+const XL=(()=>{
+const T=new Uint32Array(256);for(let n=0;n<256;n++){let c=n;for(let k=0;k<8;k++)c=c&1?0xEDB88320^(c>>>1):c>>>1;T[n]=c>>>0}
+const crc=b=>{let c=~0;for(let i=0;i<b.length;i++)c=T[(c^b[i])&255]^(c>>>8);return(~c)>>>0};
+const en=new TextEncoder();
+const zip=fs=>{const P=[],C=[];let off=0;
+for(const f of fs){const nm=en.encode(f.n),d=en.encode(f.d),c=crc(d);
+const h=new DataView(new ArrayBuffer(30));h.setUint32(0,0x04034b50,true);h.setUint16(4,20,true);h.setUint16(6,0x0800,true);h.setUint16(12,0x21,true);h.setUint32(14,c,true);h.setUint32(18,d.length,true);h.setUint32(22,d.length,true);h.setUint16(26,nm.length,true);
+P.push(new Uint8Array(h.buffer),nm,d);
+const q=new DataView(new ArrayBuffer(46));q.setUint32(0,0x02014b50,true);q.setUint16(4,20,true);q.setUint16(6,20,true);q.setUint16(8,0x0800,true);q.setUint16(14,0x21,true);q.setUint32(16,c,true);q.setUint32(20,d.length,true);q.setUint32(24,d.length,true);q.setUint16(28,nm.length,true);q.setUint32(42,off,true);
+C.push(new Uint8Array(q.buffer),nm);off+=30+nm.length+d.length}
+const cs=C.reduce((a,b)=>a+b.length,0),e=new DataView(new ArrayBuffer(22));e.setUint32(0,0x06054b50,true);e.setUint16(8,fs.length,true);e.setUint16(10,fs.length,true);e.setUint32(12,cs,true);e.setUint32(16,off,true);
+return new Blob([...P,...C,new Uint8Array(e.buffer)],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'})};
+const x=v=>String(v).replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g,'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+const col=i=>{let s='';i++;while(i){const m=(i-1)%26;s=String.fromCharCode(65+m)+s;i=(i-m-1)/26}return s};
+const H='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>',NS='http://schemas.openxmlformats.org/';
+const sheet=sh=>H+'<worksheet xmlns="'+NS+'spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>'
++(sh.w?'<cols>'+sh.w.map((w,i)=>'<col min="'+(i+1)+'" max="'+(i+1)+'" width="'+w+'" customWidth="1"/>').join('')+'</cols>':'')
++'<sheetData>'+sh.rows.map((r,ri)=>'<row r="'+(ri+1)+'">'+r.map((v,ci)=>{if(v===''||v==null)return '';const ref=col(ci)+(ri+1),b=ri===0||(r[0]==='合計');
+if(typeof v==='number'&&isFinite(v)){const st=(sh.yen||[]).includes(ci)?(b?3:2):(b?1:0);return '<c r="'+ref+'"'+(st?' s="'+st+'"':'')+'><v>'+v+'</v></c>'}
+return '<c r="'+ref+'" t="inlineStr"'+(b?' s="1"':'')+'><is><t xml:space="preserve">'+x(v)+'</t></is></c>'}).join('')+'</row>').join('')+'</sheetData></worksheet>';
+const book=shs=>{const fs=[
+{n:'[Content_Types].xml',d:H+'<Types xmlns="'+NS+'package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>'+shs.map((s,i)=>'<Override PartName="/xl/worksheets/sheet'+(i+1)+'.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>').join('')+'</Types>'},
+{n:'_rels/.rels',d:H+'<Relationships xmlns="'+NS+'package/2006/relationships"><Relationship Id="rId1" Type="'+NS+'officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>'},
+{n:'xl/workbook.xml',d:H+'<workbook xmlns="'+NS+'spreadsheetml/2006/main" xmlns:r="'+NS+'officeDocument/2006/relationships"><sheets>'+shs.map((s,i)=>'<sheet name="'+x(s.name.replace(/[\[\]:*?\/\\]/g,'').slice(0,31))+'" sheetId="'+(i+1)+'" r:id="rId'+(i+1)+'"/>').join('')+'</sheets></workbook>'},
+{n:'xl/_rels/workbook.xml.rels',d:H+'<Relationships xmlns="'+NS+'package/2006/relationships">'+shs.map((s,i)=>'<Relationship Id="rId'+(i+1)+'" Type="'+NS+'officeDocument/2006/relationships/worksheet" Target="worksheets/sheet'+(i+1)+'.xml"/>').join('')+'<Relationship Id="rId'+(shs.length+1)+'" Type="'+NS+'officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>'},
+{n:'xl/styles.xml',d:H+'<styleSheet xmlns="'+NS+'spreadsheetml/2006/main"><numFmts count="1"><numFmt numFmtId="164" formatCode="&quot;¥&quot;#,##0"/></numFmts><fonts count="2"><font><sz val="11"/><name val="Yu Gothic"/></font><font><b/><sz val="11"/><name val="Yu Gothic"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="4"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/><xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/><xf numFmtId="164" fontId="1" fillId="0" borderId="0" xfId="0" applyNumberFormat="1" applyFont="1"/></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>'}];
+shs.forEach((s,i)=>fs.push({n:'xl/worksheets/sheet'+(i+1)+'.xml',d:sheet(s)}));return zip(fs)};
+return {book};
+})();
+const kindLabel=e=>isNew(e)?'新規':isRep(e)?'リピート':'';
+const recSheet=(name,es)=>({name,w:[11,7,9,9,34,14,9,9,10,9,20],yen:[6,7,8],rows:[['日付','時刻','担当','新規/リピート','メニュー','お名前','施術','物販','合計','支払い','メモ'],
+  ...es.slice().sort((a,b)=>(a.date+(a.time||'')).localeCompare(b.date+(b.time||''))).map(e=>[e.date,e.time||'',staffName(e.staff),kindLabel(e),menuNames(e),e.name||'',+e.price||0,+e.goods||0,total(e),payLabel(e.method),e.memo||'']),
+  ['合計','','','','','',es.reduce((s,e)=>s+(+e.price||0),0),es.reduce((s,e)=>s+(+e.goods||0),0),sum(es),'','']]});
+const sumRow=(label,a)=>[label,a.length,a.filter(isNew).length,a.filter(isRep).length,sum(a.filter(e=>e.staff==='o')),sum(a.filter(e=>e.staff==='y')),a.reduce((s,e)=>s+(+e.goods||0),0),sum(a),Math.round(unitP(a)),...PAY.map(p=>sum(a.filter(e=>e.method===p.id)))];
+const sumHead=first=>[first,'来店','新規','リピート','オーナー','山内さん','物販','合計','客単価',...PAY.map(p=>p.label)];
+const sumYen=[4,5,6,7,8,9,10,11];
+const catSheet=(name,es)=>{const cs={};es.forEach(e=>{const sp=catSplit(e);Object.keys(sp).forEach(c=>{cs[c]=(cs[c]||0)+sp[c]})});
+  return {name,w:[18,12],yen:[1],rows:[['メニューの種類','売上'],...Object.entries(cs).sort((a,b)=>b[1]-a[1]).map(([c,v])=>[c,Math.round(v)])]}};
+const custSheet=(name,es)=>{const n=es.filter(isNew),r=es.filter(isRep),u=es.length-n.length-r.length;
+  return {name,w:[16,10,12],yen:[2],rows:[['','人数','客単価'],['来店（全体）',es.length,Math.round(unitP(es))],['新規',n.length,Math.round(unitP(n))],['リピート',r.length,Math.round(unitP(r))],...(u?[['未記入',u,Math.round(unitP(es.filter(e=>!isNew(e)&&!isRep(e))))]]:[])]}};
 const toCSV=rows=>'﻿'+rows.map(r=>r.map(v=>{v=String(v==null?'':v);return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v}).join(',')).join('\r\n');
 async function offerFile(filename,data,fallbackText,okMsg){
-  const type=filename.endsWith('.csv')?'text/csv':'application/json';
-  const blob=new Blob([data],{type});
+  const type=filename.endsWith('.xlsx')?'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':filename.endsWith('.csv')?'text/csv':'application/json';
+  const blob=data instanceof Blob?data:new Blob([data],{type});
   try{const file=new File([blob],filename,{type});
     if(navigator.canShare&&navigator.canShare({files:[file]})){await navigator.share({files:[file],title:filename});toast(okMsg);return true}
   }catch(e){if(e&&e.name==='AbortError'){toast('やめました');return false}}
@@ -520,23 +565,31 @@ async function offerFile(filename,data,fallbackText,okMsg){
   openSheet(`<h3>コピーしてください<button class="iconbtn" data-act="close" aria-label="閉じる">✕</button></h3><p class="small muted" style="margin:0">下の中身を長押しして「すべて選択」→「コピー」してください。</p><textarea readonly style="min-height:220px" id="cpText">${esc(fallbackText)}</textarea>`);
   return false;
 }
+const tsv=sh=>sh.rows.map(r=>r.join('\t')).join('\n');
 function exportMonth(){
-  const es=S.entries.filter(e=>e.date.startsWith(month)).sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time));
-  const rows=[['日付','時刻','担当','新規/リピート','メニュー','お名前','施術','物販','合計','支払い','メモ'],...es.map(e=>[e.date,e.time,staffName(e.staff),isNew(e)?'新規':isRep(e)?'リピート':'',menuNames(e),e.name,e.price,e.goods||0,total(e),payLabel(e.method),e.memo])];
-  rows.push(['合計','','','','','',es.reduce((s,e)=>s+(+e.price||0),0),es.reduce((s,e)=>s+(+e.goods||0),0),sum(es),'','']);rows.push([]);
-  STAFF.forEach(s=>rows.push([s.name,'','','','','','','',sum(es.filter(e=>e.staff===s.id)),'','']));
-  PAY.forEach(p=>rows.push([p.label,'','','','','','','',sum(es.filter(e=>e.method===p.id)),'','']));
-  rows.push(['客単価','','','','','','','',Math.round(unitP(es)),'','']);
-  rows.push(['新規（人数・客単価）','','','','','','','',es.filter(isNew).length,Math.round(unitP(es.filter(isNew))),'']);
-  rows.push(['リピート（人数・客単価）','','','','','','','',es.filter(isRep).length,Math.round(unitP(es.filter(isRep))),'']);
-  offerFile('グリーン売上帳_'+month+'.csv',toCSV(rows),rows.map(r=>r.join('\t')).join('\n'),'書き出しました（Excelで開けます）');
+  const es=S.entries.filter(e=>e.date.startsWith(month)),[yy,mm]=month.split('-').map(Number),days=new Date(yy,mm,0).getDate();
+  const daily={name:'日ごと',w:[12,7,7,9,11,11,10,12,10,11,11,11],yen:sumYen,rows:[sumHead('日')]};
+  for(let d=1;d<=days;d++){const ds=month+'-'+pad(d),a=es.filter(e=>e.date===ds);if(a.length)daily.rows.push(sumRow(d+'日('+WD[parseYmd(ds).getDay()]+')',a))}
+  daily.rows.push(sumRow('合計',es));
+  const rec=recSheet('記録',es);
+  offerFile('グリーン売上帳_'+yy+'年'+mm+'月.xlsx',XL.book([daily,rec,custSheet('お客さん',es),catSheet('メニュー別',es)]),tsv(rec),'Excelファイルを書き出しました');
+}
+function monthsSheet(name,es,ys){
+  const sh={name,w:[12,7,7,9,11,11,10,12,10,11,11,11],yen:sumYen,rows:[sumHead('月')]};
+  ys.forEach(y=>{for(let i=1;i<=12;i++){const k=y+'-'+pad(i),a=es.filter(e=>e.date.startsWith(k));if(a.length)sh.rows.push(sumRow(y+'年'+i+'月',a))}});
+  sh.rows.push(sumRow('合計',es));return sh;
 }
 function exportYear(){
-  const rows=[['月','件数','オーナー','山内さん','物販','合計','去年','新規','リピート','客単価']];
-  for(let i=1;i<=12;i++){const k=year+'-'+pad(i),a=S.entries.filter(e=>e.date.startsWith(k));
-    rows.push([i+'月',a.length,sum(a.filter(e=>e.staff==='o')),sum(a.filter(e=>e.staff==='y')),a.reduce((s,e)=>s+(+e.goods||0),0),sum(a),sum(S.entries.filter(e=>e.date.startsWith((year-1)+'-'+pad(i)))),a.filter(isNew).length,a.filter(isRep).length,Math.round(unitP(a))])}
-  const col=j=>rows.slice(1).reduce((s,r)=>s+(+r[j]||0),0);rows.push(['合計',col(1),col(2),col(3),col(4),col(5),col(6),col(7),col(8),col(1)?Math.round(col(5)/col(1)):0]);
-  offerFile('グリーン年間売上表_'+year+'.csv',toCSV(rows),rows.map(r=>r.join('\t')).join('\n'),'書き出しました（Excelで開けます）');
+  const es=S.entries.filter(e=>e.date.startsWith(year+'-'));
+  const ms=monthsSheet('月ごと',es,[year]);
+  offerFile('グリーン年間売上表_'+year+'年.xlsx',XL.book([ms,custSheet('お客さん',es),catSheet('メニュー別',es),recSheet('記録',es)]),tsv(ms),'Excelファイルを書き出しました');
+}
+function exportAll(){
+  const es=S.entries,ys=[...new Set(es.map(e=>+e.date.slice(0,4)))].sort();
+  const ysh={name:'年ごと',w:[12,7,7,9,11,11,10,12,10,11,11,11],yen:sumYen,rows:[sumHead('年')]};
+  ys.forEach(y=>ysh.rows.push(sumRow(y+'年',es.filter(e=>e.date.startsWith(y+'-')))));ysh.rows.push(sumRow('合計',es));
+  const rec=recSheet('全部の記録',es);
+  offerFile('グリーン売上帳_全記録_'+TODAY+'.xlsx',XL.book([rec,monthsSheet('月ごと',es,ys),ysh,custSheet('お客さん',es),catSheet('メニュー別',es)]),tsv(rec),'Excelファイルを書き出しました');
 }
 function backup(){
   const json=JSON.stringify({app:'green-uriage',savedAt:new Date().toISOString(),data:S});
@@ -576,6 +629,7 @@ document.addEventListener('click',ev=>{
     case 'del':S.entries=S.entries.filter(e=>e.id!==F.id);save();closeSheet();render();toast('消しました');break;
     case 'exportMonth':exportMonth();break;
     case 'exportYear':exportYear();break;
+    case 'exportAll':exportAll();break;
     case 'backup':backup();break;
     case 'cancelRestore':document.getElementById('restoreArea').innerHTML='';break;
     case 'addMenu':S.menus.push({id:uid(),cat:'その他',name:'新しいメニュー',price:0,options:[]});save();render();break;
